@@ -2,11 +2,11 @@
 
 source "https://rubygems.org"
 
-# Specify your gem's dependencies in sqlite_types.gemspec
+# Specify your gem's dependencies in activerecord-sqlite-types.gemspec
 gemspec
 
-gem "rake", "~> 13.0"
+gem "rake", "~> 13.3"
 
-gem "minitest", "~> 5.16"
+gem "minitest", "~> 5.26"
 
-gem "standard", "~> 1.3"
+gem "standard", "~> 1.51"
