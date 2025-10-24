@@ -30,6 +30,7 @@ module SQLiteTypes
       super
     end
 
+    # Use "=" instead of "IN" in WHERE clause, to match PostgreSQL arrays
     def force_equality?(value)
       value.is_a?(::Array)
     end
@@ -38,22 +39,22 @@ module SQLiteTypes
 
     def valid?(value)
       return true if value.nil?
-      return false if !value.is_a?(Array)
-      return value.all? { |nested_array| nested_array.is_a?(Array) } if @nested
+      return false if !value.is_a?(::Array)
+      return value.all? { |nested_array| nested_array.is_a?(::Array) } if @nested
 
       true
     end
 
     def parse_to_array(value)
       case value
-      when String
+      when ::String
         begin
-          parsed = ActiveSupport::JSON.decode(value)
-          parsed.is_a?(Array) ? parsed : nil
+          parsed = ::ActiveSupport::JSON.decode(value)
+          parsed.is_a?(::Array) ? parsed : nil
         rescue JSON::ParserError
           nil
         end
-      when Array
+      when ::Array
         value
       end
     end
@@ -67,7 +68,7 @@ module SQLiteTypes
       when :hash
         elem.to_h
       when :datetime
-        elem.is_a?(String) ? DateTime.parse(elem).in_time_zone : elem
+        elem.is_a?(::String) ? ::DateTime.parse(elem).in_time_zone : elem
       else
         raise ArgumentError, "Unsupported subtype: #{@subtype}"
       end

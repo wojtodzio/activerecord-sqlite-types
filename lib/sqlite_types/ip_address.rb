@@ -6,10 +6,10 @@ module SQLiteTypes
       return if value.nil?
 
       case value
-      when IPAddr
+      when ::IPAddr
         "#{value}/#{value.prefix}"
-      when String
-        ip_addr = IPAddr.new(value)
+      when ::String
+        ip_addr = ::IPAddr.new(value)
         "#{ip_addr}/#{ip_addr.prefix}"
       else
         raise ArgumentError, "Invalid IP address: #{value}"
@@ -20,10 +20,10 @@ module SQLiteTypes
 
     def cast_value(value)
       case value
-      when IPAddr
+      when ::IPAddr
         value
-      when String
-        IPAddr.new(value)
+      when ::String
+        ::IPAddr.new(value)
       else
         raise ArgumentError, "Invalid IP address: #{value}"
       end
