@@ -18,11 +18,45 @@ And then execute:
 bundle install
 ```
 
+## Migration Generator
+
+Generate a rollback-aware type-preparation migration while your application is still running on PostgreSQL:
+
+```bash
+bin/rails generate sqlite_types:migration prepare_sqlite_types \
+  --inet users.current_sign_in_ip users.last_sign_in_ip \
+  --interval timings.time_offset \
+  --array events.relationship_statuses:string event_classes.summary_points:text:nested email_notification_logs.attachments:hash
+```
+
+The generator creates a migration that includes `SQLiteTypes::MigrationHelpers`:
+
+```ruby
+class PrepareSqliteTypes < ActiveRecord::Migration[7.1]
+  include SQLiteTypes::MigrationHelpers
+
+  def change
+    change_inet_to_string :users, :current_sign_in_ip
+    change_inet_to_string :users, :last_sign_in_ip
+    change_interval_to_string :timings, :time_offset
+    change_array_to_json :events, :relationship_statuses, :string
+    change_array_to_json :event_classes, :summary_points, :text, nested: true
+    change_array_to_json :email_notification_logs, :attachments, :hash
+  end
+end
+```
+
+The generated migration is PostgreSQL-only. Run it while the application is still backed by PostgreSQL, then keep the app on PostgreSQL long enough to verify the SQLite-compatible column types with your normal Rails code, staging traffic, and test suite. After that, copy the prepared data to SQLite with a separate data migration tool.
+
+On the way up, `change_array_to_json` converts PostgreSQL array columns to `jsonb` and adds a `jsonb_typeof(...) = 'array'` check constraint. On PostgreSQL rollback, it rebuilds the original array column through a temporary column so data compatible with the original PostgreSQL type remains reversible. Nullability is preserved unless you pass `null:` explicitly. The default assumes PostgreSQL-style empty-array defaults; if a column has different default semantics, edit the generated migration and pass `default:` explicitly. Use `:text` when the original column was `text[]`; `:string` restores a Rails `string`/`varchar[]` column. Array element order and SQL `NULL` elements are preserved. Rollbacks lock affected array tables when running inside Rails' default PostgreSQL migration transaction, preflight JSON shape, element compatibility, and the actual PostgreSQL target casts before changing schema, then raise `ActiveRecord::IrreversibleMigration` for incompatible values. Nested PostgreSQL arrays must remain rectangular with non-empty inner arrays because PostgreSQL multidimensional arrays cannot represent ragged JSON arrays or preserve empty inner arrays.
+
 ## Available Types
 
 ### IpAddress
 
 Replaces PostgreSQL's `inet` type with a string representation that preserves IP address functionality.
+The Ruby value is an `IPAddr`, matching Rails' PostgreSQL `inet` type. `IPAddr` normalizes CIDR host bits when casting values like `192.0.2.15/24`; the migration helper preserves existing database text during the SQL type change, but new model assignments follow Rails' `IPAddr` semantics.
+Blank or invalid string assignments cast to `nil`, matching Rails' PostgreSQL `inet` type. Invalid strings passed directly to query/persistence serialization are rejected instead of being stored as text.
 
 **Usage:**
 
@@ -36,15 +70,12 @@ end
 **Migration:**
 
 ```ruby
-class MigrateInetToString < ActiveRecord::Migration[7.0]
-  def up
-    change_column :users, :current_sign_in_ip, :string
-    change_column :users, :last_sign_in_ip, :string
-  end
+class MigrateInetToString < ActiveRecord::Migration[7.1]
+  include SQLiteTypes::MigrationHelpers
 
-  def down
-    change_column :users, :current_sign_in_ip, :inet, using: 'current_sign_in_ip::inet'
-    change_column :users, :last_sign_in_ip, :inet, using: 'last_sign_in_ip::inet'
+  def change
+    change_inet_to_string :users, :current_sign_in_ip
+    change_inet_to_string :users, :last_sign_in_ip
   end
 end
 ```
@@ -53,7 +84,11 @@ end
 
 Replaces PostgreSQL arrays with JSON-backed arrays, supporting querying via SQLite's JSON functions.
 
-**Supported subtypes:** `:integer`, `:string`, `:hash`, `:datetime`
+**Supported subtypes:** `:integer`, `:string`, `:text`, `:hash`, `:json`, `:jsonb`, `:datetime`
+
+All subtypes preserve `nil` elements, matching PostgreSQL array `NULL` elements. At runtime, `SQLiteTypes::Array` casts values only when they already fit the declared subtype; for example, integer strings become integers and datetime strings become `Time` values. Values outside the declared subtype are still allowed when they are native JSON values, because SQLite JSON storage can hold broader data after migration.
+
+For example, `:integer` can store integers outside PostgreSQL `integer[]`/`int4[]` bounds and even non-integer JSON values; those values are valid for SQLite but can make a future rollback to the original PostgreSQL column type fail cleanly before schema changes. The same broader-value rule applies to `:string`, `:text`, `:hash`, and `:datetime`; rollback restores `:string` and `:text` through PostgreSQL text conversion, while incompatible values in other subtypes can block rollback. `:datetime` serializes time values in the same timestamp string shape PostgreSQL `to_jsonb(timestamp[])` uses, so equality queries can match migrated rows. The `:json` and `:jsonb` subtypes accept native JSON values only; non-finite floats and Ruby numerics that Rails would encode as strings, such as `BigDecimal`, `Rational`, and `Complex`, are rejected to avoid silent type changes or `null` writes.
 
 **Usage:**
 
@@ -68,15 +103,12 @@ end
 **Migration:**
 
 ```ruby
-class MigrateArrayToJson < ActiveRecord::Migration[7.0]
-  def up
-    change_column :users, :personality_traits, :json
-    change_column :users, :favorite_numbers, :json
-  end
+class MigrateArrayToJson < ActiveRecord::Migration[7.1]
+  include SQLiteTypes::MigrationHelpers
 
-  def down
-    change_column :users, :personality_traits, :text, array: true, default: [], using: 'personality_traits::text[]'
-    change_column :users, :favorite_numbers, :integer, array: true, default: [], using: 'favorite_numbers::integer[]'
+  def change
+    change_array_to_json :users, :personality_traits, :string
+    change_array_to_json :users, :favorite_numbers, :integer
   end
 end
 ```
@@ -100,25 +132,23 @@ end
 **Migration:**
 
 ```ruby
-class MigrateIntervalToString < ActiveRecord::Migration[7.0]
-  def up
-    change_column :events, :duration, :string
-  end
+class MigrateIntervalToString < ActiveRecord::Migration[7.1]
+  include SQLiteTypes::MigrationHelpers
 
-  def down
-    change_column :events, :duration, :interval, using: 'duration::interval'
+  def change
+    change_interval_to_string :events, :duration
   end
 end
 ```
 
 ## Migration Strategy
 
-The recommended approach for migrating from PostgreSQL to SQLite is incremental and reversible:
+The recommended approach for migrating from PostgreSQL to SQLite is incremental and reversible while data remains compatible with the original PostgreSQL column types:
 
 1. **Prepare while still on PostgreSQL:**
    - Add custom type declarations to your models
    - Run migrations to change column types (e.g., `inet` → `string`)
-   - Test thoroughly - migrations are reversible!
+   - Test thoroughly; rollbacks are preflighted and reversible for compatible data.
 
 2. **Switch to SQLite:**
    - Update `database.yml` to point to SQLite

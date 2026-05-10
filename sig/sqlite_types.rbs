@@ -1,4 +1,32 @@
 module SQLiteTypes
   VERSION: String
-  # See the writing guide of rbs: https://github.com/ruby/rbs#guides
+
+  class IpAddress < ActiveRecord::Type::String
+    def serialize: (untyped value) -> String?
+    def changed?: (untyped old_value, untyped new_value, untyped new_value_before_type_cast) -> bool
+    def changed_in_place?: (untyped raw_old_value, untyped new_value) -> bool
+  end
+
+  class Array < ActiveRecord::Type::Json
+    SUPPORTED_SUBTYPES: ::Array[Symbol]
+
+    def initialize: ((Symbol | String) subtype, ?nested: bool) -> void
+    def deserialize: (untyped value) -> ::Array[untyped]?
+    def serialize: (untyped value) -> untyped
+    def force_equality?: (untyped value) -> bool
+  end
+
+  class Interval < ActiveRecord::Type::Value
+    def serialize: (untyped value) -> untyped
+    def type_cast_for_schema: (untyped value) -> String
+  end
+
+  module MigrationHelpers
+    DEFAULT_NOT_PROVIDED: untyped
+    SUPPORTED_ARRAY_SUBTYPES: ::Array[Symbol]
+
+    def change_inet_to_string: ((Symbol | String) table_name, (Symbol | String) column_name, **untyped options) -> untyped
+    def change_interval_to_string: ((Symbol | String) table_name, (Symbol | String) column_name, **untyped options) -> untyped
+    def change_array_to_json: ((Symbol | String) table_name, (Symbol | String) column_name, (Symbol | String) subtype, ?nested: bool, ?null: bool, ?default: untyped, ?constraint_name: String?) -> untyped
+  end
 end

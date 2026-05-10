@@ -1,0 +1,19 @@
+# frozen_string_literal: true
+
+require "sqlite_types/migration_helpers"
+
+class <%= migration_class_name %> < ActiveRecord::Migration[<%= migration_version %>]
+  include SQLiteTypes::MigrationHelpers
+
+  def change
+<% inet_columns.each do |column| -%>
+    change_inet_to_string :<%= column.table_name %>, :<%= column.column_name %>
+<% end -%>
+<% interval_columns.each do |column| -%>
+    change_interval_to_string :<%= column.table_name %>, :<%= column.column_name %>
+<% end -%>
+<% array_columns.each do |column| -%>
+    change_array_to_json :<%= column.table_name %>, :<%= column.column_name %>, :<%= column.subtype %><%= ", nested: true" if column.nested %>
+<% end -%>
+  end
+end
