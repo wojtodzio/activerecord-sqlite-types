@@ -11,6 +11,11 @@ class TestMigrationGenerator < Rails::Generators::TestCase
   setup :prepare_destination
   teardown { FileUtils.rm_rf(destination_root) }
 
+  def test_generator_is_discoverable_through_the_documented_rails_namespace
+    assert_equal SQLiteTypes::Generators::MigrationGenerator,
+      Rails::Generators.find_by_namespace("sqlite_types:migration")
+  end
+
   def test_generates_a_reversible_type_preparation_migration
     run_generator [
       "prepare_sqlite_types",

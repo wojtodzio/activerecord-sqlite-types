@@ -12,6 +12,7 @@ module SQLiteTypes
       IDENTIFIER_PATTERN = /\A[a-zA-Z_]\w*\z/
       ARRAY_MODIFIERS = %w[nested].freeze
 
+      namespace "sqlite_types:migration"
       source_root File.expand_path("templates", __dir__)
 
       class_option :inet,
