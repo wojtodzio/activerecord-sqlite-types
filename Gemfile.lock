@@ -48,6 +48,7 @@ GEM
     connection_pool (2.5.4)
     crass (1.0.6)
     date (3.5.1)
+    docile (1.4.1)
     drb (2.2.3)
     erb (4.0.4.1)
       cgi (>= 0.3.3)
@@ -158,6 +159,12 @@ GEM
       rubocop (>= 1.75.0, < 2.0)
       rubocop-ast (>= 1.38.0, < 2.0)
     ruby-progressbar (1.13.0)
+    simplecov (0.22.0)
+      docile (~> 1.1)
+      simplecov-html (~> 0.11)
+      simplecov_json_formatter (~> 0.1)
+    simplecov-html (0.13.2)
+    simplecov_json_formatter (0.1.4)
     sqlite3 (1.6.0-aarch64-linux)
     sqlite3 (1.6.0-arm-linux)
     sqlite3 (1.6.0-arm64-darwin)
@@ -205,6 +212,7 @@ DEPENDENCIES
   pg (>= 1.5)
   railties (>= 7.1)
   rake (~> 13.3)
+  simplecov (~> 0.22)
   standard (~> 1.51)
 
 BUNDLED WITH

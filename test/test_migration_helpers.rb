@@ -101,6 +101,18 @@ class TestMigrationHelpers < Minitest::Test
     assert_includes expression, "CASE WHEN jsonb_typeof(sqlite_types_element.value) = 'null' THEN NULL ELSE sqlite_types_element.value END"
   end
 
+  def test_postgresql_hash_array_rollback_restores_jsonb_arrays
+    migration = FakeMigration.new(adapter_name: "PostgreSQL", direction: :down)
+
+    migration.change_array_to_json :events, :payloads, :hash
+
+    assert_includes migration.calls, [
+      :add_column,
+      [:events, "payloads_sqlite_types_tmp", :jsonb],
+      {array: true, default: []}
+    ]
+  end
+
   def test_postgresql_array_rollback_preflights_actual_restore_cast_before_schema_changes
     migration = FakeMigration.new(adapter_name: "PostgreSQL", direction: :down)
 
@@ -121,6 +133,23 @@ class TestMigrationHelpers < Minitest::Test
     first_validation_call = migration.calls.find { |call| call.first == :select_value }
     assert_equal 'LOCK TABLE "events" IN SHARE ROW EXCLUSIVE MODE', lock_call[1].first
     assert_operator migration.calls.index(lock_call), :<, migration.calls.index(first_validation_call)
+  end
+
+  def test_postgresql_array_rollback_skips_table_locks_outside_transaction
+    migration = FakeMigration.new(adapter_name: "PostgreSQL", direction: :down, transaction_open: false)
+
+    migration.change_array_to_json :events, :tags, :string
+
+    refute migration.calls.any? { |call| call.first == :execute && call[1].first.start_with?("LOCK TABLE") }
+    assert migration.calls.any? { |call| call.first == :select_value }
+  end
+
+  def test_array_migration_omits_default_change_when_default_is_already_target_value
+    migration = FakeMigration.new(adapter_name: "PostgreSQL", direction: :up)
+
+    migration.change_array_to_json :events, :tags, :string, default: nil
+
+    refute migration.calls.any? { |call| call.first == :change_column_default }
   end
 
   def test_default_not_provided_omits_default_options
@@ -176,6 +205,37 @@ class TestMigrationHelpers < Minitest::Test
     assert_match(/\Atop_fitness_and_wellness_interests_for_external_visi_[0-9a-f]{10}\z/, temporary_column_name)
   end
 
+  def test_defensive_array_helpers_reject_unsupported_subtypes
+    migration = FakeMigration.new(adapter_name: "PostgreSQL", direction: :up)
+
+    assert_raises(ArgumentError) do
+      migration.change_array_to_json :events, :tags, Object.new
+    end
+
+    helper = migration_class.new
+    assert_raises(ArgumentError) { helper.send(:postgresql_array_expression, '"tags"', :uuid, false) }
+    assert_raises(ArgumentError) { helper.send(:postgresql_invalid_array_element_condition, "value", :uuid) }
+  end
+
+  def test_postgresql_array_restore_cast_reports_empty_statement_messages
+    statement_error = ActiveRecord::StatementInvalid.new("hidden")
+    statement_error.define_singleton_method(:message) { "" }
+    migration = FakeMigration.new(adapter_name: "PostgreSQL", direction: :down, select_value_error: statement_error)
+
+    error = assert_raises(ActiveRecord::IrreversibleMigration) do
+      migration.send(:validate_postgresql_array_restore_cast!, :events, :tags, :string, nested: false)
+    end
+
+    assert_includes error.message, "PostgreSQL rejected the rollback cast"
+  end
+
+  def test_resolved_null_returns_nil_when_column_metadata_is_missing
+    column = Struct.new(:name, :null).new("other_column", false)
+    migration = FakeMigration.new(adapter_name: "PostgreSQL", direction: :down, columns: [column])
+
+    assert_nil migration.send(:resolved_null, :events, :tags, nil)
+  end
+
   def test_postgresql_inet_and_interval_migrations_use_explicit_casts
     migration = FakeMigration.new(adapter_name: "PostgreSQL", direction: :up)
 
@@ -223,8 +283,12 @@ class FakeMigration
 
   attr_reader :calls, :connection
 
-  def initialize(adapter_name:, direction:)
-    @connection = Struct.new(:adapter_name).new(adapter_name)
+  def initialize(adapter_name:, direction:, transaction_open: nil, columns: nil, select_value_error: nil)
+    @connection = Object.new
+    @connection.define_singleton_method(:adapter_name) { adapter_name }
+    @connection.define_singleton_method(:transaction_open?) { transaction_open } unless transaction_open.nil?
+    @connection.define_singleton_method(:columns) { |_table_name| columns } unless columns.nil?
+    @select_value_error = select_value_error
     @direction = direction
     @calls = []
   end
@@ -259,6 +323,8 @@ class FakeMigration
 
   def select_value(sql)
     calls << [:select_value, [sql], {}]
+    raise @select_value_error if @select_value_error
+
     nil
   end
 

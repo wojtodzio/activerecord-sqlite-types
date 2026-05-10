@@ -48,8 +48,37 @@ class TestMigrationGenerator < Rails::Generators::TestCase
 
     assert_raises(Rails::Generators::Error) { generator.send(:parse_column_spec, "users") }
     assert_raises(Rails::Generators::Error) { generator.send(:parse_column_spec, "users.current-sign-in-ip") }
+    assert_raises(Rails::Generators::Error) { generator.send(:parse_array_spec, "events.tags") }
     assert_raises(Rails::Generators::Error) { generator.send(:parse_array_spec, "events.tags:uuid") }
     assert_raises(Rails::Generators::Error) { generator.send(:parse_array_spec, "events.tags:string:deeply") }
+  end
+
+  def test_migration_number_falls_back_to_sequential_numbers_when_timestamps_are_disabled
+    generator = SQLiteTypes::Generators::MigrationGenerator
+
+    generator.stub(:timestamped_migrations?, false) do
+      generator.stub(:current_migration_number, 7) do
+        assert_equal "008", generator.next_migration_number(destination_root)
+      end
+    end
+  end
+
+  def test_timestamped_migration_setting_falls_back_through_rails_configuration_locations
+    generator = SQLiteTypes::Generators::MigrationGenerator
+
+    ActiveRecord.stub(:respond_to?, false) do
+      ActiveRecord::Base.stub(:respond_to?, true) do
+        ActiveRecord::Base.stub(:timestamped_migrations, false) do
+          refute generator.timestamped_migrations?
+        end
+      end
+    end
+
+    ActiveRecord.stub(:respond_to?, false) do
+      ActiveRecord::Base.stub(:respond_to?, false) do
+        assert generator.timestamped_migrations?
+      end
+    end
   end
 
   def test_gemspec_packages_generator_and_runtime_files_without_local_environment_files

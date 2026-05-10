@@ -203,6 +203,7 @@ class TestSqliteTypes < Minitest::Test
     assert_nil type.cast("")
     assert_nil type.cast("not-an-ip")
     assert_raises(ArgumentError) { type.serialize("not-an-ip") }
+    assert_raises(ArgumentError) { type.serialize(Object.new) }
   end
 
   def test_ip_address_dirty_tracking_uses_ipaddr_semantics_without_rewriting_unchanged_raw_values
@@ -210,6 +211,7 @@ class TestSqliteTypes < Minitest::Test
     refute type.changed?(nil, nil, nil)
     refute type.changed_in_place?(nil, nil)
     assert type.changed_in_place?(nil, IPAddr.new("192.0.2.1"))
+    assert type.changed_in_place?(Object.new, IPAddr.new("192.0.2.1"))
 
     ActiveRecord::Base.connection.execute <<~SQL
       INSERT INTO type_records (name, ip_address, string_tags, score_ids, metadata_items, meeting_times, nested_tags)
@@ -274,14 +276,20 @@ class TestSqliteTypes < Minitest::Test
     end
 
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:string).serialize("not an array") }
+    assert_raises(ArgumentError) { SQLiteTypes::Array.new(:string).deserialize(Object.new) }
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:string, nested: true).serialize(["not nested"]) }
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:integer).serialize([Object.new]) }
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:string).serialize([Object.new]) }
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:hash).serialize([Object.new]) }
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:datetime).serialize([Object.new]) }
+
+    unsupported_type = SQLiteTypes::Array.new(:string)
+    unsupported_type.instance_variable_set(:@subtype, :unsupported)
+    assert_raises(ArgumentError) { unsupported_type.serialize(["value"]) }
   end
 
   def test_array_type_supports_migration_subtypes_without_lossy_casts
+    assert_nil SQLiteTypes::Array.new(:string).serialize(nil)
     assert_equal [-2_147_483_649, 2_147_483_648],
       SQLiteTypes::Array.new(:integer).deserialize("[-2147483649,2147483648]")
     assert_equal [1, "not-an-integer", 1.5, true, {"kind" => "broader"}],
@@ -298,10 +306,18 @@ class TestSqliteTypes < Minitest::Test
       ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:integer).serialize(["not-an-integer"]))
     assert_equal ["not-a-hash"],
       ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:hash).serialize(["not-a-hash"]))
+    assert_equal [12],
+      SQLiteTypes::Array.new(:datetime).deserialize("[12]")
+    datetime_like_without_time_zone = Object.new
+    datetime_like_without_time_zone.define_singleton_method(:acts_like?) { |type| type == :time }
+    assert_same datetime_like_without_time_zone,
+      SQLiteTypes::Array.new(:datetime).deserialize([datetime_like_without_time_zone]).first
     assert_equal ["not-a-date"],
       ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:datetime).serialize(["not-a-date"]))
     assert_equal ["2025-01-09T12:30:00"],
       ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:datetime).serialize([Time.zone.parse("2025-01-09 12:30:00")]))
+    assert_equal [["2025-01-09T12:30:00", nil]],
+      ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:datetime, nested: true).serialize([[Time.zone.parse("2025-01-09 12:30:00"), nil]]))
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:jsonb).serialize([Object.new]) }
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:jsonb).serialize([Float::NAN]) }
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:jsonb).serialize([Float::INFINITY]) }
@@ -324,5 +340,15 @@ class TestSqliteTypes < Minitest::Test
     assert_equal time.to_i, type.deserialize('["2025-01-09T12:30:00"]').first.to_i
   ensure
     Time.zone = previous_zone
+  end
+
+  def test_interval_type_handles_numeric_and_passthrough_values
+    type = SQLiteTypes::Interval.new
+
+    assert_equal "PT1M30S", type.serialize(90)
+    assert_equal "PT15M", type.serialize("PT15M")
+    assert_equal "\"PT15M\"", type.type_cast_for_schema(15.minutes)
+    assert_nil type.cast("not-a-duration")
+    assert_equal 90, type.cast(90)
   end
 end

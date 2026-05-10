@@ -9,4 +9,6 @@ gem "rake", "~> 13.3"
 
 gem "minitest", "~> 5.26"
 
+gem "simplecov", "~> 0.22", require: false
+
 gem "standard", "~> 1.51"
