@@ -176,12 +176,8 @@ GEM
     simplecov-html (0.13.2)
     simplecov_json_formatter (0.1.4)
     sorbet-runtime (0.5.12443)
-    sqlite3 (1.7.3-aarch64-linux)
-    sqlite3 (1.7.3-arm-linux)
-    sqlite3 (1.7.3-arm64-darwin)
-    sqlite3 (1.7.3-x86-linux)
-    sqlite3 (1.7.3-x86_64-darwin)
-    sqlite3 (1.7.3-x86_64-linux)
+    sqlite3 (1.7.3)
+      mini_portile2 (~> 2.8.0)
     standard (1.51.1)
       language_server-protocol (~> 3.17.0.2)
       lint_roller (~> 1.0)
@@ -214,6 +210,7 @@ PLATFORMS
   arm-linux-gnu
   arm-linux-musl
   arm64-darwin
+  ruby
   x86-linux-gnu
   x86-linux-musl
   x86_64-darwin
@@ -228,6 +225,7 @@ DEPENDENCIES
   railties (>= 7.1)
   rake (~> 13.3)
   simplecov (~> 0.22)
+  sqlite3 (>= 1.6, < 2.0)
   standard (~> 1.51)
 
 BUNDLED WITH

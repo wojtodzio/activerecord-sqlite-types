@@ -5,6 +5,8 @@ source "https://rubygems.org"
 # Specify your gem's dependencies in activerecord-sqlite-types.gemspec
 gemspec
 
+gem "sqlite3", ">= 1.6", "< 2.0", force_ruby_platform: true
+
 gem "rake", "~> 13.3"
 
 gem "minitest", "~> 5.26"
