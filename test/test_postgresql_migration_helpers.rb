@@ -290,6 +290,7 @@ class TestPostgreSQLMigrationHelpers < Minitest::Test
       adapter: "postgresql",
       database: database,
       username: ENV["PGUSER"] || ENV["USER"],
+      password: ENV["PGPASSWORD"],
       host: ENV["PGHOST"],
       port: ENV["PGPORT"]
     }.compact
