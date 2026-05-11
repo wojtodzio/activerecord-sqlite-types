@@ -466,6 +466,14 @@ class TestSqliteTypes < Minitest::Test
     time_like_with_to_time.define_singleton_method(:to_time) { Time.utc(2025, 1, 9, 12, 30, 0) }
     assert_equal ["2025-01-09T12:30:00"],
       ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:datetime).serialize([time_like_with_to_time]))
+    offset_to_time = Object.new
+    offset_to_time.define_singleton_method(:utc) { Time.utc(2025, 1, 9, 12, 30, 0) }
+    offset_to_time.define_singleton_method(:strftime) { |format| Time.new(2025, 1, 9, 13, 30, 0, "+01:00").strftime(format) }
+    time_like_with_offset_to_time = Object.new
+    time_like_with_offset_to_time.define_singleton_method(:acts_like?) { |type| type == :time }
+    time_like_with_offset_to_time.define_singleton_method(:to_time) { offset_to_time }
+    assert_equal ["2025-01-09T12:30:00"],
+      ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:datetime).serialize([time_like_with_offset_to_time]))
     assert_equal [["2025-01-09T12:30:00", nil]],
       ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:datetime, nested: true).serialize([[Time.zone.parse("2025-01-09 12:30:00"), nil]]))
     assert_equal [[1, 2]], SQLiteTypes::Array.new(:integer, nested: true).deserialize([["1", "2"]])
@@ -519,8 +527,10 @@ class TestSqliteTypes < Minitest::Test
 
     type = SQLiteTypes::Array.new(:datetime)
     time = Time.zone.parse("2025-01-09 13:30:00")
+    offset_time = Time.new(2025, 1, 9, 13, 30, 0, "+01:00")
 
     assert_equal ["2025-01-09T12:30:00"], ActiveSupport::JSON.decode(type.serialize([time]))
+    assert_equal ["2025-01-09T12:30:00"], ActiveSupport::JSON.decode(type.serialize([offset_time]))
     assert_equal time.to_i, type.deserialize('["2025-01-09T12:30:00"]').first.to_i
   ensure
     Time.zone = previous_zone
