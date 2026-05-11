@@ -129,14 +129,16 @@ class TestPostgreSQLMigrationHelpers < Minitest::Test
     assert_equal default_row_values, row_values("defaults_after_down")
   end
 
-  def test_active_record_array_queries_match_before_and_after_type_preparation
+  def test_active_record_queries_and_commands_match_before_and_after_type_preparation
     PostgreSQLNativeMigrationRecord.reset_column_information
-    before = array_query_results(PostgreSQLNativeMigrationRecord)
+    before = active_record_equivalence_results(PostgreSQLNativeMigrationRecord)
 
+    reset_schema
     migration_class.migrate(:up)
     PostgreSQLMigrationRecord.reset_column_information
+    after = active_record_equivalence_results(PostgreSQLMigrationRecord)
 
-    assert_equal before, array_query_results(PostgreSQLMigrationRecord)
+    assert_equal before, after
   end
 
   def test_nested_json_rollback_rejects_ragged_arrays_before_postgresql_array_cast
@@ -393,17 +395,171 @@ class TestPostgreSQLMigrationHelpers < Minitest::Test
     end
   end
 
-  def array_query_results(model)
+  def active_record_equivalence_results(model)
+    created_time = Time.zone.parse("2025-04-05 06:07:08")
+    updated_time = Time.zone.parse("2025-05-06 07:08:09")
+    bulk_time = Time.zone.parse("2025-06-07 08:09:10")
+
+    results = {
+      initial_snapshot: normalized_records(model),
+      initial_queries: equivalence_query_results(model)
+    }
+
+    created = model.create!(
+      name: "created_by_equivalence",
+      ip_address: IPAddr.new("198.51.100.44"),
+      time_offset: 90.minutes,
+      tags: ["created", nil, "record"],
+      score_ids: ["12", nil, 13],
+      payloads: [{"kind" => "created", "nested" => {"ok" => true}}, nil],
+      json_payloads: [{"kind" => "created-json"}, nil],
+      nested_tags: [["created", nil], ["row", "two"]],
+      optional_tags: ["created", nil],
+      meeting_times: [created_time, nil]
+    )
+
+    results[:created_record] = normalized_record(created.reload)
+    results[:created_queries] = {
+      by_ip_address: ordered_names(model.where(ip_address: "198.51.100.44/32")),
+      by_interval: ordered_names(model.where(time_offset: 90.minutes)),
+      by_text_array: ordered_names(model.where(tags: ["created", nil, "record"])),
+      by_integer_array: ordered_names(model.where(score_ids: [12, nil, 13])),
+      by_payload_array: ordered_names(model.where(payloads: [{"kind" => "created", "nested" => {"ok" => true}}, nil])),
+      by_nested_array: ordered_names(model.where(nested_tags: [["created", nil], ["row", "two"]])),
+      by_timestamp_array: ordered_names(model.where(meeting_times: [created_time, nil]))
+    }
+
+    full = model.find_by!(name: "full")
+    full.update!(
+      ip_address: "203.0.113.9/25",
+      time_offset: "PT45M",
+      tags: ["instance", "updated"],
+      score_ids: ["21", 22],
+      payloads: [{"kind" => "instance"}],
+      json_payloads: [{"kind" => "instance-json"}],
+      nested_tags: [["instance", "updated"]],
+      optional_tags: nil,
+      meeting_times: [updated_time]
+    )
+
+    results[:instance_updated_record] = normalized_record(full.reload)
+    results[:instance_update_queries] = {
+      by_ip_address: ordered_names(model.where(ip_address: "203.0.113.0/25")),
+      by_interval: ordered_names(model.where(time_offset: 45.minutes)),
+      by_text_array: ordered_names(model.where(tags: ["instance", "updated"])),
+      by_integer_array: ordered_names(model.where(score_ids: [21, 22])),
+      by_null_optional_tags: ordered_names(model.where(optional_tags: nil)),
+      by_timestamp_array: ordered_names(model.where(meeting_times: [updated_time]))
+    }
+
+    results[:bulk_update_count] = model.where(name: "complex").update_all(
+      name: "complex_bulk_updated",
+      time_offset: 2.hours + 30.minutes,
+      tags: ["bulk", "updated"],
+      score_ids: ["31", 32],
+      payloads: [{"kind" => "bulk"}],
+      json_payloads: [{"kind" => "bulk-json"}],
+      nested_tags: [["bulk", "row"]],
+      optional_tags: ["bulk", nil],
+      meeting_times: [bulk_time]
+    )
+    results[:bulk_updated_record] = normalized_record(model.find_by!(name: "complex_bulk_updated"))
+    results[:bulk_update_queries] = {
+      by_interval: ordered_names(model.where(time_offset: 150.minutes)),
+      by_text_array: ordered_names(model.where(tags: ["bulk", "updated"])),
+      by_integer_array: ordered_names(model.where(score_ids: [31, 32])),
+      by_optional_array: ordered_names(model.where(optional_tags: ["bulk", nil])),
+      by_timestamp_array: ordered_names(model.where(meeting_times: [bulk_time]))
+    }
+
+    destroyed = model.find_by!(name: "with_null_elements").destroy
+    results[:destroyed_record] = destroyed.destroyed?
+    results[:delete_all_count] = model.where(name: "empty").delete_all
+    results[:post_delete_queries] = {
+      destroyed_missing: !model.exists?(name: "with_null_elements"),
+      deleted_missing: !model.exists?(name: "empty"),
+      remaining_names: ordered_names(model.all)
+    }
+    results[:final_snapshot] = normalized_records(model)
+
+    results
+  end
+
+  def equivalence_query_results(model)
     {
+      all_names: ordered_names(model.all),
+      projected_names: model.select(:name).order(:name).map(&:name),
       text_with_null: model.where(tags: ["alpha", nil, "beta"]).order(:name).pluck(:name),
       text_order_sensitive: model.where(tags: ["beta", nil, "alpha"]).order(:name).pluck(:name),
       integer_with_null: model.where(score_ids: [1, nil, 2]).order(:name).pluck(:name),
+      integer_casts_strings: model.where(score_ids: ["1", nil, "2"]).order(:name).pluck(:name),
       integer_empty: model.where(score_ids: []).order(:name).pluck(:name),
+      hash_with_null: model.where(payloads: [{"kind" => "event", "id" => 12}, nil]).order(:name).pluck(:name),
       nested_text: model.where(nested_tags: [["north", nil], ["east", "west"]]).order(:name).pluck(:name),
       nullable_text_null: model.where(optional_tags: nil).order(:name).pluck(:name),
       nullable_text_with_null: model.where(optional_tags: ["maybe", nil]).order(:name).pluck(:name),
-      timestamp_with_null: model.where(meeting_times: [Time.zone.parse("2025-01-09 12:30:00"), nil]).order(:name).pluck(:name)
+      timestamp_with_null: model.where(meeting_times: [Time.zone.parse("2025-01-09 12:30:00"), nil]).order(:name).pluck(:name),
+      inet_string_with_host_bits: model.where(ip_address: "192.0.2.15/24").order(:name).pluck(:name),
+      inet_ipaddr_normalized: model.where(ip_address: IPAddr.new("192.0.2.15/24")).order(:name).pluck(:name),
+      inet_string_normalized: model.where(ip_address: "192.0.2.0/24").order(:name).pluck(:name),
+      interval_duration: model.where(time_offset: 20.minutes).order(:name).pluck(:name),
+      interval_iso_string: model.where(time_offset: "PT20M").order(:name).pluck(:name),
+      compound_array_query: model.where(tags: ["alpha", nil, "beta"], score_ids: [1, nil, 2]).order(:name).pluck(:name),
+      not_empty_tags: model.where.not(tags: []).order(:name).pluck(:name),
+      limited_nullable_tags: model.where.not(optional_tags: nil).order(:name).limit(2).pluck(:name),
+      exists_by_name: model.exists?(name: "full"),
+      count_empty_score_ids: model.where(score_ids: []).count
     }
+  end
+
+  def ordered_names(relation)
+    relation.order(:name).pluck(:name)
+  end
+
+  def normalized_records(model)
+    model.order(:name).map { |record| normalized_record(record) }
+  end
+
+  def normalized_record(record)
+    {
+      "name" => record.name,
+      "ip_address" => normalize_ip_address(record.ip_address),
+      "time_offset" => normalize_interval(record.time_offset),
+      "tags" => record.tags,
+      "score_ids" => record.score_ids,
+      "payloads" => normalize_json_value(record.payloads),
+      "json_payloads" => normalize_json_value(record.json_payloads),
+      "nested_tags" => record.nested_tags,
+      "optional_tags" => record.optional_tags,
+      "meeting_times" => normalize_times(record.meeting_times)
+    }
+  end
+
+  def normalize_ip_address(value)
+    return if value.nil?
+
+    SQLiteTypes::IpAddress.new.serialize(value)
+  end
+
+  def normalize_interval(value)
+    return if value.nil?
+
+    SQLiteTypes::Interval.new.serialize(value)
+  end
+
+  def normalize_times(values)
+    values&.map { |value| value&.to_i }
+  end
+
+  def normalize_json_value(value)
+    case value
+    when Array
+      value.map { |element| normalize_json_value(element) }
+    when Hash
+      value.to_h.transform_keys(&:to_s).transform_values { |element| normalize_json_value(element) }
+    else
+      value
+    end
   end
 
   def serialized_rows

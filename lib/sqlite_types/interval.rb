@@ -7,7 +7,7 @@ module SQLiteTypes
     def serialize(value)
       case value
       when ::ActiveSupport::Duration
-        value.iso8601(precision: precision)
+        canonical_duration(value).iso8601(precision: precision)
       when ::Numeric
         ::ActiveSupport::Duration.build(value).iso8601(precision: precision)
       else
@@ -20,6 +20,12 @@ module SQLiteTypes
     end
 
     private
+
+    def canonical_duration(value)
+      return value if value.variable?
+
+      ::ActiveSupport::Duration.build(value)
+    end
 
     def cast_value(value)
       case value

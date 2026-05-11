@@ -56,7 +56,7 @@ On the way up, `change_array_to_json` converts PostgreSQL array columns to `json
 
 Replaces PostgreSQL's `inet` type with a string representation that preserves IP address functionality.
 The Ruby value is an `IPAddr`, matching Rails' PostgreSQL `inet` type. `IPAddr` normalizes CIDR host bits when casting values like `192.0.2.15/24`; the migration helper preserves existing database text during the SQL type change, but new model assignments follow Rails' `IPAddr` semantics.
-Blank or invalid string assignments cast to `nil`, matching Rails' PostgreSQL `inet` type. Invalid strings passed directly to query/persistence serialization are rejected instead of being stored as text.
+Blank or invalid string assignments cast to `nil`, matching Rails' PostgreSQL `inet` type. String query values are validated and then kept as written, so queries against migrated rows with preserved host bits match PostgreSQL `inet` text behavior. Invalid strings passed directly to query/persistence serialization are rejected instead of being stored as text.
 
 **Usage:**
 
@@ -120,6 +120,7 @@ For array querying functionality, see [Stephen Margheim's article on enhancing R
 ### Interval
 
 Replaces PostgreSQL's `interval` type with ISO8601 duration strings.
+Fixed-length `ActiveSupport::Duration` values are serialized through their total seconds, so equivalent durations like `150.minutes` and `2.hours + 30.minutes` use the same queryable representation. Variable durations with month or year parts keep their calendar components.
 
 **Usage:**
 

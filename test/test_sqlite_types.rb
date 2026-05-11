@@ -65,8 +65,8 @@ class TestSqliteTypes < Minitest::Test
     assert_equal "192.0.2.15/32", raw.fetch("ip_address")
 
     assert_instance_of ActiveSupport::Duration, reloaded.time_offset
-    assert_equal "PT90M", raw.fetch("time_offset")
-    assert_equal "PT90M", SQLiteTypes::Interval.new.serialize(reloaded.time_offset)
+    assert_equal "PT1H30M", raw.fetch("time_offset")
+    assert_equal "PT1H30M", SQLiteTypes::Interval.new.serialize(reloaded.time_offset)
 
     assert_equal ["leader", "runner"], reloaded.string_tags
     assert_equal [1, 2], reloaded.score_ids
@@ -227,24 +227,29 @@ class TestSqliteTypes < Minitest::Test
       assert_same address, type.cast(address)
       assert_equal "192.0.2.1", type.cast("192.0.2.1").to_s
       assert_equal "192.0.2.1/32", type.serialize(address)
-      assert_equal "192.0.2.1/32", type.serialize("192.0.2.1")
+      assert_equal "192.0.2.1", type.serialize("192.0.2.1")
     end
 
     with_shadowed_sqlite_types_constant(:String, Class.new) do
       assert_equal "192.0.2.1", type.cast("192.0.2.1").to_s
-      assert_equal "192.0.2.1/32", type.serialize("192.0.2.1")
+      assert_equal "192.0.2.1", type.serialize("192.0.2.1")
     end
   end
 
   def test_ip_address_dirty_tracking_uses_ipaddr_semantics_without_rewriting_unchanged_raw_values
     type = SQLiteTypes::IpAddress.new
     refute type.changed?(nil, nil, nil)
+    refute type.changed?(nil, "not-an-ip", nil)
     refute type.changed?("192.0.2.15/24", "192.0.2.0/24", nil)
     assert type.changed?("192.0.2.0/24", "192.0.2.0/32", nil)
     refute type.changed_in_place?(nil, nil)
     refute type.changed_in_place?("not-an-ip", nil)
+    refute type.changed_in_place?("192.0.2.15/24", "192.0.2.0/24")
     assert type.changed_in_place?(nil, IPAddr.new("192.0.2.1"))
     assert type.changed_in_place?(Object.new, IPAddr.new("192.0.2.1"))
+    assert type.changed_in_place?(nil, Object.new)
+    assert_instance_of IPAddr, type.__send__(:cast_value, "192.0.2.1")
+    assert_nil type.__send__(:cast_value, "not-an-ip")
 
     ActiveRecord::Base.connection.execute <<~SQL
       INSERT INTO type_records (name, ip_address, string_tags, score_ids, metadata_items, meeting_times, nested_tags)
@@ -542,6 +547,10 @@ class TestSqliteTypes < Minitest::Test
     duration = 15.minutes
 
     assert_equal "PT1M30S", type.serialize(90)
+    assert_equal "PT2H30M", type.serialize(150.minutes)
+    assert_equal "PT2H30M", type.serialize(2.hours + 30.minutes)
+    assert_equal "P1M", type.serialize(1.month)
+    assert_equal "P31D", type.serialize(31.days)
     assert_equal "PT1.234S", precision_type.serialize(1.2345.seconds)
     assert_equal "PT1.234S", precision_type.serialize(1.2345)
     assert_equal "PT15M", type.serialize("PT15M")
