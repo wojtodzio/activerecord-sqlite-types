@@ -21,6 +21,11 @@ class PostgreSQLNativeMigrationRecord < ActiveRecord::Base
 end
 
 class TestPostgreSQLMigrationHelpers < Minitest::Test
+  cover "SQLiteTypes::Array*"
+  cover "SQLiteTypes::Interval*"
+  cover "SQLiteTypes::IpAddress*"
+  cover "SQLiteTypes::MigrationHelpers*"
+
   DATABASE_NAME = "activerecord_sqlite_types_test"
 
   def setup

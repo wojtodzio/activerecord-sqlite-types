@@ -10,4 +10,9 @@ end
 
 require "standard/rake"
 
-task default: %i[test standard]
+desc "Run mutation tests"
+task :mutant do
+  sh "bundle exec mutant run"
+end
+
+task default: %i[test standard mutant]

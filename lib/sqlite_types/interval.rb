@@ -23,8 +23,6 @@ module SQLiteTypes
 
     def cast_value(value)
       case value
-      when ::ActiveSupport::Duration
-        value
       when ::String
         begin
           ::ActiveSupport::Duration.parse(value)

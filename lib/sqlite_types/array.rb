@@ -52,7 +52,7 @@ module SQLiteTypes
       when ::String
         begin
           parsed = ::ActiveSupport::JSON.decode(value)
-          parsed.is_a?(::Array) ? parsed : nil
+          parsed if parsed.instance_of?(::Array)
         rescue JSON::ParserError
           nil
         end
@@ -68,11 +68,10 @@ module SQLiteTypes
 
     def cast_element(elem)
       raise ArgumentError, "Invalid #{@subtype} array element: #{elem.inspect}" unless storable_element?(elem)
-      return if elem.nil?
 
       case @subtype
       when :integer
-        valid_integer?(elem) ? cast_integer_element(elem) : elem
+        integer_string?(elem) ? cast_integer_element(elem) : elem
       when :string, :text
         elem
       when :hash
@@ -87,22 +86,21 @@ module SQLiteTypes
     end
 
     def storable_element?(elem)
-      return true if elem.nil?
       return true if @subtype == :datetime && datetime_like?(elem)
 
       json_compatible?(elem)
     end
 
     def datetime_like?(value)
-      (value.respond_to?(:acts_like?) && value.acts_like?(:time)) || value.is_a?(::Date)
+      value.acts_like?(:time) || value.is_a?(::Date)
     end
 
-    def valid_integer?(value)
-      value.is_a?(::Integer) || (value.is_a?(::String) && value.match?(/\A[+-]?\d+\z/))
+    def integer_string?(value)
+      value.is_a?(::String) && value.match?(/\A[+-]?\d+\z/)
     end
 
     def cast_integer_element(value)
-      value.is_a?(::Integer) ? value : value.to_i
+      Integer(value, 10)
     end
 
     def cast_datetime_element(value)
@@ -127,8 +125,7 @@ module SQLiteTypes
     end
 
     def serialize_datetime_element(element)
-      return if element.nil?
-      return element unless element.respond_to?(:acts_like?) && element.acts_like?(:time)
+      return element unless element.acts_like?(:time)
 
       postgresql_timestamp_json(element)
     end
@@ -145,16 +142,12 @@ module SQLiteTypes
         true
       when ::Float
         value.finite?
-      when ::Numeric
-        false
       when ::Array
         value.all? { |element| json_compatible?(element) }
       when ::Hash
         value.all? do |key, element|
-          (key.is_a?(::String) || key.is_a?(::Symbol)) && json_compatible?(element)
+          (key.is_a?(::String) || key.instance_of?(::Symbol)) && json_compatible?(element)
         end
-      else
-        false
       end
     end
   end

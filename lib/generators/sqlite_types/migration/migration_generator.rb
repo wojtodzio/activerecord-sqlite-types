@@ -64,10 +64,6 @@ module SQLiteTypes
         ActiveRecord::Migration.current_version
       end
 
-      def migration_class_name
-        class_name
-      end
-
       def inet_columns
         @inet_columns ||= Array(options[:inet]).map { |spec| parse_column_spec(spec) }
       end
@@ -82,7 +78,7 @@ module SQLiteTypes
 
       def parse_column_spec(spec)
         table_name, column_name = spec.to_s.split(".", 2)
-        raise Rails::Generators::Error, "Expected column as table.column, got #{spec.inspect}" if table_name.to_s.empty? || column_name.to_s.empty?
+        raise Rails::Generators::Error, "Expected column as table.column, got #{spec.inspect}" if table_name.empty? || column_name.to_s.empty?
         validate_identifier! table_name, "table"
         validate_identifier! column_name, "column"
 

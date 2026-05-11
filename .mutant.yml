@@ -1,0 +1,18 @@
+---
+usage: opensource
+includes:
+  - lib
+  - test
+requires:
+  - sqlite_types
+  - generators/sqlite_types/migration/migration_generator
+environment_variables:
+  SIMPLECOV_DISABLED: "1"
+integration:
+  name: minitest
+jobs: 1
+mutation:
+  timeout: 30.0
+matcher:
+  subjects:
+    - SQLiteTypes*

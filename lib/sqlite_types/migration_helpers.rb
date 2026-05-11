@@ -99,21 +99,13 @@ module SQLiteTypes
       temporary_column_name = temporary_array_column_name(column_name)
 
       add_column table_name, temporary_column_name, postgresql_array_subtype(subtype), **postgresql_array_column_options(null: null, default: default)
-      execute <<~SQL.squish
-        UPDATE #{quote_table_name(table_name)}
-        SET #{quote_column_name(temporary_column_name)} = #{postgresql_array_restore_expression(quote_column_name(column_name), subtype, nested)};
-      SQL
+      execute "UPDATE #{quote_table_name(table_name)} SET #{quote_column_name(temporary_column_name)} = #{postgresql_array_restore_expression(quote_column_name(column_name), subtype, nested)};"
       remove_column table_name, column_name
       rename_column table_name, temporary_column_name, column_name
     end
 
     def postgresql_array_restore_expression(column_sql, subtype, nested)
-      <<~SQL.squish
-        CASE
-        WHEN #{column_sql} IS NULL THEN NULL
-        ELSE COALESCE((#{postgresql_array_expression(column_sql, subtype, nested)}), '{}')
-        END
-      SQL
+      "CASE WHEN #{column_sql} IS NULL THEN NULL ELSE COALESCE((#{postgresql_array_expression(column_sql, subtype, nested)}), '{}') END"
     end
 
     def postgresql_array_subtype(subtype)
@@ -127,10 +119,8 @@ module SQLiteTypes
 
     def postgresql_array_expression(column_sql, subtype, nested)
       if nested
-        return <<~SQL.squish
-          SELECT array_agg((#{postgresql_array_expression("sqlite_types_outer.value", subtype, false)}) ORDER BY sqlite_types_outer.ordinality)
-          FROM jsonb_array_elements(#{column_sql}) WITH ORDINALITY AS sqlite_types_outer(value, ordinality)
-        SQL
+        inner_expression = postgresql_array_expression("sqlite_types_outer.value", subtype, false)
+        return "SELECT array_agg((#{inner_expression}) ORDER BY sqlite_types_outer.ordinality) FROM jsonb_array_elements(#{column_sql}) WITH ORDINALITY AS sqlite_types_outer(value, ordinality)"
       end
 
       case subtype
@@ -151,28 +141,7 @@ module SQLiteTypes
 
     def validate_postgresql_nested_array_shape!(table_name, column_name)
       column_sql = "sqlite_types_row.#{quote_column_name(column_name)}"
-      invalid_row = select_value <<~SQL.squish
-        SELECT 1
-        FROM #{quote_table_name(table_name)} AS sqlite_types_row
-        WHERE #{column_sql} IS NOT NULL
-          AND (
-            jsonb_typeof(#{column_sql}) <> 'array'
-            OR EXISTS (
-              SELECT 1
-              FROM jsonb_array_elements(#{column_sql}) AS sqlite_types_outer(value)
-              WHERE CASE
-                WHEN jsonb_typeof(sqlite_types_outer.value) <> 'array' THEN true
-                ELSE jsonb_array_length(sqlite_types_outer.value) = 0
-              END
-            )
-            OR (
-              SELECT COUNT(DISTINCT jsonb_array_length(sqlite_types_outer.value))
-              FROM jsonb_array_elements(#{column_sql}) AS sqlite_types_outer(value)
-              WHERE jsonb_typeof(sqlite_types_outer.value) = 'array'
-            ) > 1
-          )
-        LIMIT 1
-      SQL
+      invalid_row = select_value "SELECT 1 FROM #{quote_table_name(table_name)} AS sqlite_types_row WHERE #{column_sql} IS NOT NULL AND (jsonb_typeof(#{column_sql}) <> 'array' OR EXISTS (SELECT 1 FROM jsonb_array_elements(#{column_sql}) AS sqlite_types_outer(value) WHERE CASE WHEN jsonb_typeof(sqlite_types_outer.value) <> 'array' THEN true ELSE jsonb_array_length(sqlite_types_outer.value) = 0 END) OR (SELECT COUNT(DISTINCT jsonb_array_length(sqlite_types_outer.value)) FROM jsonb_array_elements(#{column_sql}) AS sqlite_types_outer(value) WHERE jsonb_typeof(sqlite_types_outer.value) = 'array') > 1) LIMIT 1"
 
       return unless invalid_row
 
@@ -184,34 +153,9 @@ module SQLiteTypes
       column_sql = "sqlite_types_row.#{quote_column_name(column_name)}"
       invalid_condition = postgresql_invalid_array_element_condition("sqlite_types_element.value", subtype)
       invalid_row = if nested
-        select_value <<~SQL.squish
-          SELECT 1
-          FROM #{quote_table_name(table_name)} AS sqlite_types_row
-          WHERE #{column_sql} IS NOT NULL
-            AND EXISTS (
-              SELECT 1
-              FROM jsonb_array_elements(#{column_sql}) AS sqlite_types_outer(value)
-              WHERE jsonb_typeof(sqlite_types_outer.value) = 'array'
-                AND EXISTS (
-                  SELECT 1
-                  FROM jsonb_array_elements(sqlite_types_outer.value) AS sqlite_types_element(value)
-                  WHERE #{invalid_condition}
-                )
-            )
-          LIMIT 1
-        SQL
+        select_value "SELECT 1 FROM #{quote_table_name(table_name)} AS sqlite_types_row WHERE #{column_sql} IS NOT NULL AND EXISTS (SELECT 1 FROM jsonb_array_elements(#{column_sql}) AS sqlite_types_outer(value) WHERE jsonb_typeof(sqlite_types_outer.value) = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements(sqlite_types_outer.value) AS sqlite_types_element(value) WHERE #{invalid_condition})) LIMIT 1"
       else
-        select_value <<~SQL.squish
-          SELECT 1
-          FROM #{quote_table_name(table_name)} AS sqlite_types_row
-          WHERE #{column_sql} IS NOT NULL
-            AND EXISTS (
-              SELECT 1
-              FROM jsonb_array_elements(#{column_sql}) AS sqlite_types_element(value)
-              WHERE #{invalid_condition}
-            )
-          LIMIT 1
-        SQL
+        select_value "SELECT 1 FROM #{quote_table_name(table_name)} AS sqlite_types_row WHERE #{column_sql} IS NOT NULL AND EXISTS (SELECT 1 FROM jsonb_array_elements(#{column_sql}) AS sqlite_types_element(value) WHERE #{invalid_condition}) LIMIT 1"
       end
 
       return unless invalid_row
@@ -229,13 +173,7 @@ module SQLiteTypes
       when :datetime
         "#{type_sql} NOT IN ('string', 'null')"
       when :integer
-        <<~SQL.squish
-          CASE
-          WHEN #{type_sql} = 'null' THEN false
-          WHEN #{type_sql} IN ('number', 'string') THEN (#{element_sql} #>> '{}') !~ '^[+-]?[0-9]+$'
-          ELSE true
-          END
-        SQL
+        "CASE WHEN #{type_sql} = 'null' THEN false WHEN #{type_sql} IN ('number', 'string') THEN (#{element_sql} #>> '{}') !~ '^[+-]?[0-9]+$' ELSE true END"
       when :hash, :json, :jsonb
         "false"
       else
@@ -244,7 +182,7 @@ module SQLiteTypes
     end
 
     def validate_registered_postgresql_array_rollbacks!
-      return if defined?(@sqlite_types_array_rollbacks_validated) && @sqlite_types_array_rollbacks_validated
+      return if @sqlite_types_array_rollbacks_validated
 
       lock_registered_postgresql_array_tables!
 
@@ -268,13 +206,7 @@ module SQLiteTypes
 
     def validate_postgresql_array_shape!(table_name, column_name, subtype)
       column_sql = "sqlite_types_row.#{quote_column_name(column_name)}"
-      invalid_row = select_value <<~SQL.squish
-        SELECT 1
-        FROM #{quote_table_name(table_name)} AS sqlite_types_row
-        WHERE #{column_sql} IS NOT NULL
-          AND jsonb_typeof(#{column_sql}) <> 'array'
-        LIMIT 1
-      SQL
+      invalid_row = select_value "SELECT 1 FROM #{quote_table_name(table_name)} AS sqlite_types_row WHERE #{column_sql} IS NOT NULL AND jsonb_typeof(#{column_sql}) <> 'array' LIMIT 1"
 
       return unless invalid_row
 
@@ -284,12 +216,7 @@ module SQLiteTypes
 
     def validate_postgresql_array_restore_cast!(table_name, column_name, subtype, nested:)
       column_sql = "sqlite_types_row.#{quote_column_name(column_name)}"
-      select_value <<~SQL.squish
-        SELECT COUNT(*)
-        FROM #{quote_table_name(table_name)} AS sqlite_types_row
-        WHERE #{column_sql} IS NOT NULL
-          AND (#{postgresql_array_restore_expression(column_sql, subtype, nested)}) IS NOT NULL
-      SQL
+      select_value "SELECT COUNT(*) FROM #{quote_table_name(table_name)} AS sqlite_types_row WHERE #{column_sql} IS NOT NULL AND (#{postgresql_array_restore_expression(column_sql, subtype, nested)}) IS NOT NULL"
     rescue ActiveRecord::StatementInvalid => error
       raise ActiveRecord::IrreversibleMigration,
         "Cannot restore #{table_name}.#{column_name} to a PostgreSQL #{subtype} array; PostgreSQL rejected the rollback cast: #{error.message.lines.first&.strip}"
@@ -311,7 +238,7 @@ module SQLiteTypes
       return null unless null.nil?
       return unless connection.respond_to?(:columns)
 
-      connection.columns(table_name).find { |column| column.name.to_s == column_name.to_s }&.null
+      connection.columns(table_name).find { |column| column.name == column_name.to_s }&.null
     end
 
     def default_array_constraint_name(table_name, column_name)

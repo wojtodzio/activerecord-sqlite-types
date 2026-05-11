@@ -163,7 +163,7 @@ For a detailed migration guide, see [this presentation on migrating from Postgre
 
 ## Development
 
-After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake test` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
+After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake test` to run the tests with SimpleCov's 100% line and branch coverage gates. Run `bundle exec standardrb` for style checks and `bundle exec mutant run` for the mutation test suite. The default `rake` task runs all three gates.
 
 To install this gem onto your local machine, run `bundle exec rake install`.
 

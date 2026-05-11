@@ -17,11 +17,11 @@ module SQLiteTypes
     end
 
     def changed?(old_value, new_value, _new_value_before_type_cast)
-      serialize(old_value) != serialize(new_value)
+      !serialize(old_value).eql?(serialize(new_value))
     end
 
     def changed_in_place?(raw_old_value, new_value)
-      serialize_raw_value(raw_old_value) != serialize(new_value)
+      !serialize_raw_value(raw_old_value).eql?(serialize(new_value))
     rescue ArgumentError
       true
     end
