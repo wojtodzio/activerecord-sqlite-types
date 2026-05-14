@@ -411,16 +411,57 @@ class TestSqliteTypes < Minitest::Test
     assert_includes error.message, "Invalid integer array element"
     assert_includes error.message, "inspected-invalid-element"
     refute_includes error.message, "stringified-invalid-element"
+    error = assert_raises(ArgumentError) { SQLiteTypes::Array.new(:integer).deserialize([invalid_element]) }
+    assert_includes error.message, "Invalid integer array element"
+    assert_includes error.message, "inspected-invalid-element"
+    refute_includes error.message, "stringified-invalid-element"
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:string).serialize([Object.new]) }
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:string).serialize([Time.zone.parse("2025-01-09 12:30:00")]) }
+    error = assert_raises(ArgumentError) { SQLiteTypes::Array.new(:string).deserialize([Time.zone.parse("2025-01-09 12:30:00")]) }
+    assert_includes error.message, "Invalid string array element"
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:hash).serialize([Object.new]) }
     non_hash_json_object = Object.new
     non_hash_json_object.define_singleton_method(:as_json) { |_| [] }
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:hash).serialize([non_hash_json_object]) }
+    non_hash_json_array_object = Object.new
+    non_hash_json_array_object.define_singleton_method(:as_json) { |*| ["not a hash"] }
+    non_hash_json_array_object.define_singleton_method(:inspect) { "inspected-non-hash-json-array" }
+    non_hash_json_array_object.define_singleton_method(:to_s) { "stringified-non-hash-json-array" }
+    error = assert_raises(ArgumentError) { SQLiteTypes::Array.new(:hash).serialize([non_hash_json_array_object]) }
+    assert_includes error.message, "Invalid hash array element"
+    assert_includes error.message, "inspected-non-hash-json-array"
+    refute_includes error.message, "stringified-non-hash-json-array"
     invalid_json_object = Object.new
     invalid_json_object.define_singleton_method(:as_json) { |*| raise TypeError, "invalid json" }
-    assert_raises(ArgumentError) { SQLiteTypes::Array.new(:hash).serialize([invalid_json_object]) }
-    assert_raises(ArgumentError) { SQLiteTypes::Array.new(:datetime).serialize([Object.new]) }
+    invalid_json_object.define_singleton_method(:inspect) { "inspected-invalid-json-object" }
+    invalid_json_object.define_singleton_method(:to_s) { "stringified-invalid-json-object" }
+    error = assert_raises(ArgumentError) { SQLiteTypes::Array.new(:hash).serialize([invalid_json_object]) }
+    assert_includes error.message, "Invalid hash array element"
+    assert_includes error.message, "inspected-invalid-json-object"
+    refute_includes error.message, "stringified-invalid-json-object"
+    error = assert_raises(ArgumentError) { SQLiteTypes::Array.new(:hash).__send__(:json_round_trip, invalid_json_object) }
+    assert_includes error.message, "Invalid hash array element"
+    assert_includes error.message, "inspected-invalid-json-object"
+    refute_includes error.message, "stringified-invalid-json-object"
+    invalid_hash_json = Class.new(Hash)
+    invalid_hash_value = invalid_hash_json["source" => invalid_json_object]
+    invalid_hash_value.define_singleton_method(:inspect) { "inspected-invalid-hash" }
+    invalid_hash_value.define_singleton_method(:to_s) { "stringified-invalid-hash" }
+    error = assert_raises(ArgumentError) { SQLiteTypes::Array.new(:hash).serialize([invalid_hash_value]) }
+    assert_includes error.message, "Invalid hash array element"
+    assert_includes error.message, "inspected-invalid-hash"
+    refute_includes error.message, "stringified-invalid-hash"
+    invalid_datetime = Object.new
+    invalid_datetime.define_singleton_method(:inspect) { "inspected-invalid-datetime" }
+    invalid_datetime.define_singleton_method(:to_s) { "stringified-invalid-datetime" }
+    error = assert_raises(ArgumentError) { SQLiteTypes::Array.new(:datetime).serialize([invalid_datetime]) }
+    assert_includes error.message, "Invalid datetime array element"
+    assert_includes error.message, "inspected-invalid-datetime"
+    refute_includes error.message, "stringified-invalid-datetime"
+    error = assert_raises(ArgumentError) { SQLiteTypes::Array.new(:datetime).deserialize([invalid_datetime]) }
+    assert_includes error.message, "Invalid datetime array element"
+    assert_includes error.message, "inspected-invalid-datetime"
+    refute_includes error.message, "stringified-invalid-datetime"
 
     unsupported_type = SQLiteTypes::Array.new(:string)
     unsupported_type.instance_variable_set(:@subtype, :unsupported)
@@ -481,6 +522,22 @@ class TestSqliteTypes < Minitest::Test
     end
     assert_equal ["not-a-date"], SQLiteTypes::Array.new(:datetime).deserialize('["not-a-date"]')
     assert_equal ["alpha"], SQLiteTypes::Array.new(:text).deserialize('["alpha"]')
+    assert_equal ["alpha"], ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:text).serialize([:alpha]))
+    assert_equal "alpha", SQLiteTypes::Array.new(:text).__send__(:serialize_element, :alpha)
+    with_shadowed_sqlite_types_constant(:Symbol, Class.new) do
+      assert_equal "alpha", SQLiteTypes::Array.new(:text).__send__(:serialize_element, :alpha)
+    end
+    hash_subclass_from_json = Class.new(Hash)
+    hash_round_trip_type = SQLiteTypes::Array.new(:hash)
+    hash_round_trip_type.define_singleton_method(:json_round_trip) do |_value|
+      hash_subclass_from_json["kind" => "event"]
+    end
+    assert_equal [{"kind" => "event"}],
+      ActiveSupport::JSON.decode(hash_round_trip_type.serialize([Object.new]))
+    with_shadowed_sqlite_types_constant(:Hash, Class.new) do
+      assert_equal [{"kind" => "event"}],
+        ActiveSupport::JSON.decode(hash_round_trip_type.serialize([Object.new]))
+    end
     assert_equal [{"kind" => "event"}, ["nested"], 1, 1.5, true, nil],
       SQLiteTypes::Array.new(:jsonb).deserialize('[{"kind":"event"},["nested"],1,1.5,true,null]')
     assert_equal [[nil], {"maybe" => nil}],
@@ -545,10 +602,14 @@ class TestSqliteTypes < Minitest::Test
     string_subclass = Class.new(String)
     assert_equal Time.zone.parse("2025-01-09T12:30:00Z").to_i,
       SQLiteTypes::Array.new(:datetime).deserialize([string_subclass.new("2025-01-09T12:30:00Z")]).first.to_i
+    assert_equal ["2025-01-09T12:30:00"],
+      ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:datetime).serialize([string_subclass.new("2025-01-09T12:30:00Z")]))
     with_shadowed_sqlite_types_constant(:String, Class.new) do
       parsed_string = SQLiteTypes::Array.new(:datetime).deserialize(["2025-01-09T12:30:00Z"]).first
       assert_instance_of ActiveSupport::TimeWithZone, parsed_string
       assert_equal Time.zone.parse("2025-01-09T12:30:00Z").to_i, parsed_string.to_i
+      assert_equal ["2025-01-09T12:30:00"],
+        ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:datetime).serialize(["2025-01-09T12:30:00Z"]))
     end
     with_shadowed_sqlite_types_constant(:DateTime, Class.new) do
       parsed_datetime = SQLiteTypes::Array.new(:datetime).deserialize(["2025-01-09T12:30:00Z"]).first
@@ -557,6 +618,8 @@ class TestSqliteTypes < Minitest::Test
     end
     assert_equal ["not-a-date"],
       ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:datetime).serialize(["not-a-date"]))
+    assert_equal ["2025-01-09T12:30:00"],
+      ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:datetime).serialize(["2025-01-09T12:30:00Z"]))
     assert_equal ["2025-01-09T12:30:00"],
       ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:datetime).serialize([Time.zone.parse("2025-01-09 12:30:00")]))
     assert_equal ["2025-01-09T12:30:00.1203"],
@@ -576,6 +639,8 @@ class TestSqliteTypes < Minitest::Test
       ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:datetime).serialize([time_like_with_offset_to_time]))
     assert_equal [["2025-01-09T12:30:00", nil]],
       ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:datetime, nested: true).serialize([[Time.zone.parse("2025-01-09 12:30:00"), nil]]))
+    assert_equal [[1, 2]],
+      ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:integer, nested: true).serialize([["1", "2"]]))
     assert_equal [[1, 2]], SQLiteTypes::Array.new(:integer, nested: true).deserialize([["1", "2"]])
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:jsonb).serialize([Object.new]) }
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:jsonb).serialize([[1, Object.new]]) }
@@ -588,7 +653,8 @@ class TestSqliteTypes < Minitest::Test
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:jsonb).serialize([Rational(1, 3)]) }
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:jsonb).serialize([Complex(1, 2)]) }
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:string).deserialize('{"not":"array"}') }
-    assert_raises(ArgumentError) { SQLiteTypes::Array.new(:string, nested: true).deserialize('["not nested"]') }
+    error = assert_raises(ArgumentError) { SQLiteTypes::Array.new(:string, nested: true).deserialize('["not nested"]') }
+    assert_includes error.message, "Invalid nested array value"
     error = assert_raises(ArgumentError) { SQLiteTypes::Array.new(nil) }
     assert_includes error.message, "Unsupported subtype:"
     error = assert_raises(ArgumentError) { SQLiteTypes::Array.new("bogus") }

@@ -92,10 +92,11 @@ module SQLiteTypes
         elem
       when :hash
         return elem if json_compatible?(elem)
-        return json_round_trip(elem) if elem.is_a?(::Hash)
 
         serialized = json_round_trip(elem)
-        raise ArgumentError, "Invalid #{@subtype} array element: #{elem.inspect}" unless serialized.is_a?(::Hash) && serialized.any?
+        unless serialized.is_a?(::Hash) && serialized.any?
+          raise ArgumentError, "Invalid #{@subtype} array element: #{elem.inspect}"
+        end
 
         serialized
       when :json, :jsonb
@@ -204,7 +205,7 @@ module SQLiteTypes
     end
 
     def json_round_trip(value)
-      ::ActiveSupport::JSON.decode(::ActiveSupport::JSON.encode(value))
+      ActiveSupport::JSON.decode(ActiveSupport::JSON.encode(value))
     rescue JSON::ParserError, TypeError, EncodingError
       raise ArgumentError, "Invalid #{@subtype} array element: #{value.inspect}"
     end

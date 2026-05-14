@@ -16,6 +16,9 @@ module SQLiteTypes
     def force_equality?: (untyped value) -> bool
   end
 
+  module ArrayColumns
+  end
+
   class Interval < ActiveRecord::Type::Value
     def serialize: (untyped value) -> untyped
     def type_cast_for_schema: (untyped value) -> String
