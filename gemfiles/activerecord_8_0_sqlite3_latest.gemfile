@@ -1,0 +1,7 @@
+# frozen_string_literal: true
+
+eval_gemfile "ci_base.gemfile"
+
+gem "activerecord", "~> 8.0.0"
+gem "railties", "~> 8.0.0"
+gem "sqlite3", ">= 2.9", force_ruby_platform: true

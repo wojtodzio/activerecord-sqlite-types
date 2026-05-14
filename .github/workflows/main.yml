@@ -7,10 +7,14 @@ on:
 
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    name: Ruby ${{ matrix.ruby }}
+    name: Ruby ${{ matrix.ruby }} / Active Record ${{ matrix.activerecord }} / sqlite3 ${{ matrix.sqlite3 }}
     services:
       postgres:
         image: postgres:18
@@ -25,14 +29,41 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      BUNDLE_GEMFILE: ${{ matrix.gemfile }}
+      MUTANT_DISABLED: '1'
       PGHOST: 127.0.0.1
       PGUSER: postgres
       PGPASSWORD: postgres
       PGPORT: 5432
     strategy:
+      fail-fast: false
       matrix:
-        ruby:
-          - '3.4.2'
+        include:
+          - ruby: '3.1'
+            activerecord: '7.1'
+            sqlite3: '1.6'
+            gemfile: gemfiles/activerecord_7_1_sqlite3_1.gemfile
+            lint: false
+          - ruby: '3.2'
+            activerecord: '7.1'
+            sqlite3: latest
+            gemfile: gemfiles/activerecord_7_1_sqlite3_latest.gemfile
+            lint: false
+          - ruby: '3.2'
+            activerecord: '7.2'
+            sqlite3: latest
+            gemfile: gemfiles/activerecord_7_2_sqlite3_latest.gemfile
+            lint: true
+          - ruby: '3.2'
+            activerecord: '8.0'
+            sqlite3: latest
+            gemfile: gemfiles/activerecord_8_0_sqlite3_latest.gemfile
+            lint: false
+          - ruby: '4.0'
+            activerecord: '8.1'
+            sqlite3: latest
+            gemfile: gemfiles/activerecord_8_1_sqlite3_latest.gemfile
+            lint: false
 
     steps:
       - uses: actions/checkout@v4
@@ -41,5 +72,10 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
-      - name: Run the default task
-        run: bundle exec rake
+      - name: Print dependency versions
+        run: bundle exec ruby -e 'require "active_record"; require "sqlite3"; puts "ruby=#{RUBY_VERSION} activerecord=#{ActiveRecord::VERSION::STRING} sqlite3=#{SQLite3::VERSION}"'
+      - name: Run tests
+        run: bundle exec rake test
+      - name: Run standardrb
+        if: matrix.lint
+        run: bundle exec standardrb

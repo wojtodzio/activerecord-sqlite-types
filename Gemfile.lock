@@ -3,7 +3,7 @@ PATH
   specs:
     activerecord-sqlite-types (0.2.0)
       activerecord (>= 7.1)
-      sqlite3 (>= 1.6, < 2.0)
+      sqlite3 (>= 1.6)
 
 GEM
   remote: https://rubygems.org/
@@ -225,7 +225,7 @@ DEPENDENCIES
   railties (>= 7.1)
   rake (~> 13.3)
   simplecov (~> 0.22)
-  sqlite3 (>= 1.6, < 2.0)
+  sqlite3 (>= 1.6)
   standard (~> 1.51)
 
 BUNDLED WITH

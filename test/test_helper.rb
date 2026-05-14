@@ -15,7 +15,11 @@ $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 require "sqlite_types"
 
 require "minitest/autorun"
-require "mutant/minitest/coverage"
+if ENV["MUTANT_DISABLED"] == "1"
+  Minitest::Test.singleton_class.define_method(:cover) { |*| }
+else
+  require "mutant/minitest/coverage"
+end
 
 ActiveRecord::Migration.verbose = false
 Time.zone = "UTC"

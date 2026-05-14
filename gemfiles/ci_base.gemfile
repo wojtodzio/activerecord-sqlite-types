@@ -1,0 +1,10 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+gemspec path: ".."
+
+gem "minitest", "~> 5.26"
+gem "rake", "~> 13.3"
+gem "simplecov", "~> 0.22", require: false
+gem "standard", "~> 1.51"

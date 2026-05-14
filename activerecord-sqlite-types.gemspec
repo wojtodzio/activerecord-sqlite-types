@@ -24,11 +24,15 @@ Gem::Specification.new do |spec|
   # Specify which files should be added to the gem when it is released.
   # The `git ls-files -z` loads the files in the RubyGem that have been added into git.
   gemspec = File.basename(__FILE__)
+  excluded_path_prefixes = %w[
+    bin/ test/ spec/ features/ gemfiles/ .git .github appveyor
+    Gemfile .envrc .standard devenv
+  ]
   spec.files = IO.popen(%w[git ls-files -z], chdir: __dir__, err: IO::NULL) do |ls|
     ls.readlines("\x0", chomp: true).reject do |f|
       (f == gemspec) ||
         (f == "Rakefile") ||
-        f.start_with?(*%w[bin/ test/ spec/ features/ .git .github appveyor Gemfile .envrc .standard devenv])
+        f.start_with?(*excluded_path_prefixes)
     end
   end
   spec.bindir = "exe"
@@ -36,7 +40,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   spec.add_dependency "activerecord", ">= 7.1"
-  spec.add_dependency "sqlite3", ">= 1.6", "< 2.0"
+  spec.add_dependency "sqlite3", ">= 1.6"
 
   spec.add_development_dependency "pg", ">= 1.5"
   spec.add_development_dependency "railties", ">= 7.1"
