@@ -35,6 +35,7 @@ class TestSqliteTypes < Minitest::Test
         t.json :metadata_items, default: [], null: false
         t.json :meeting_times, default: [], null: false
         t.json :nested_tags, default: [], null: false
+        t.index :ip_address, unique: true
       end
     end
   end
@@ -113,6 +114,37 @@ class TestSqliteTypes < Minitest::Test
 
     matching.destroy!
     assert_equal ["Other"], SqliteTypeRecord.order(:name).pluck(:name)
+  end
+
+  def test_ip_address_supports_create_or_find_by_with_unique_indexes
+    first = SqliteTypeRecord.create_or_find_by!(
+      ip_address: IPAddr.new("203.0.113.4"),
+      string_tags: [],
+      score_ids: [],
+      metadata_items: [],
+      meeting_times: [],
+      nested_tags: []
+    )
+
+    second = SqliteTypeRecord.create_or_find_by!(
+      ip_address: IPAddr.new("203.0.113.4"),
+      string_tags: [],
+      score_ids: [],
+      metadata_items: [],
+      meeting_times: [],
+      nested_tags: []
+    )
+
+    assert_equal first.id, second.id
+    assert_equal "203.0.113.4/32", raw_row("type_records", first.id).fetch("ip_address")
+  end
+
+  def test_ip_address_cast_values_use_the_same_serialization_as_ipaddr_values
+    type = SQLiteTypes::IpAddress.new
+
+    assert_equal "192.0.2.1", type.serialize("192.0.2.1")
+    assert_equal "192.0.2.15/24", type.serialize("192.0.2.15/24")
+    assert_equal "192.0.2.0/24", type.serialize_cast_value(type.cast("192.0.2.15/24"))
   end
 
   def test_array_dirty_tracking_uses_cast_values_and_detects_in_place_mutation
