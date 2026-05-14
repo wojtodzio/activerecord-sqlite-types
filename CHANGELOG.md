@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-15
+
+### Added
+
+- Add SQLite JSON-backed array column query scopes for containment, overlap, and negated matches
+
 ## [0.3.3] - 2026-05-14
 
 ### Fixed
