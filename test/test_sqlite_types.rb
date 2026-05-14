@@ -102,10 +102,13 @@ class TestSqliteTypes < Minitest::Test
     )
 
     assert_equal matching.id, SqliteTypeRecord.find_by(ip_address: IPAddr.new("203.0.113.4")).id
+    assert_equal matching.id, SqliteTypeRecord.find_by(ip_address: "203.0.113.4").id
     assert_equal matching.id, SqliteTypeRecord.find_by(time_offset: 15.minutes).id
     assert_equal [matching.id], SqliteTypeRecord.where(string_tags: ["vip", "alpha"]).pluck(:id)
     assert_equal [matching.id], SqliteTypeRecord.where(score_ids: ["1", "2"]).pluck(:id)
     assert_equal [matching.id], SqliteTypeRecord.where(meeting_times: [meeting_time]).pluck(:id)
+    assert_equal [matching.id], SqliteTypeRecord.where(ip_address: ["203.0.113.4"]).pluck(:id)
+    assert_equal [matching.id], SqliteTypeRecord.where(ip_address: ["203.0.113.4/32"]).pluck(:id)
     assert_empty SqliteTypeRecord.where(string_tags: ["alpha", "vip"])
 
     matching.update!(score_ids: ["4", "5"], time_offset: "PT45M")
@@ -139,10 +142,35 @@ class TestSqliteTypes < Minitest::Test
     assert_equal "203.0.113.4/32", raw_row("type_records", first.id).fetch("ip_address")
   end
 
+  def test_ip_address_active_record_lookup_helpers_canonicalize_string_values
+    first = SqliteTypeRecord.create_or_find_by!(
+      ip_address: IPAddr.new("203.0.113.4"),
+      string_tags: [],
+      score_ids: [],
+      metadata_items: [],
+      meeting_times: [],
+      nested_tags: []
+    )
+
+    second = SqliteTypeRecord.create_or_find_by!(
+      ip_address: "203.0.113.4",
+      string_tags: [],
+      score_ids: [],
+      metadata_items: [],
+      meeting_times: [],
+      nested_tags: []
+    )
+    third = SqliteTypeRecord.find_or_create_by!(ip_address: "203.0.113.4")
+
+    assert_equal first.id, second.id
+    assert_equal first.id, third.id
+    assert_equal "203.0.113.4/32", raw_row("type_records", first.id).fetch("ip_address")
+  end
+
   def test_ip_address_cast_values_use_the_same_serialization_as_ipaddr_values
     type = SQLiteTypes::IpAddress.new
 
-    assert_equal "192.0.2.1", type.serialize("192.0.2.1")
+    assert_equal "192.0.2.1/32", type.serialize("192.0.2.1")
     assert_equal "192.0.2.15/24", type.serialize("192.0.2.15/24")
     assert_equal "192.0.2.0/24", type.serialize_cast_value(type.cast("192.0.2.15/24"))
   end
@@ -281,12 +309,14 @@ class TestSqliteTypes < Minitest::Test
       assert_same address, type.cast(address)
       assert_equal "192.0.2.1", type.cast("192.0.2.1").to_s
       assert_equal "192.0.2.1/32", type.serialize(address)
-      assert_equal "192.0.2.1", type.serialize("192.0.2.1")
+      assert_equal "192.0.2.1/32", type.serialize("192.0.2.1")
+      assert_equal "192.0.2.15/24", type.serialize("192.0.2.15/24")
     end
 
     with_shadowed_sqlite_types_constant(:String, Class.new) do
       assert_equal "192.0.2.1", type.cast("192.0.2.1").to_s
-      assert_equal "192.0.2.1", type.serialize("192.0.2.1")
+      assert_equal "192.0.2.1/32", type.serialize("192.0.2.1")
+      assert_equal "192.0.2.15/24", type.serialize("192.0.2.15/24")
     end
   end
 
