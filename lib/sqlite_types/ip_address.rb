@@ -9,8 +9,8 @@ module SQLiteTypes
       when ::IPAddr
         serialize_ipaddr(value)
       when ::String
-        ::IPAddr.new(value)
-        value
+        ipaddr = ::IPAddr.new(value)
+        value.include?("/") ? value : serialize_ipaddr(ipaddr)
       else
         raise ArgumentError, "Invalid IP address: #{value}"
       end

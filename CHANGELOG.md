@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+## [0.3.3] - 2026-05-14
+
+### Fixed
+
+- Canonicalize `IpAddress` string serialization to match `IPAddr` values in Active Record lookup and query paths
+
 ## [0.3.2] - 2026-05-14
 
 ### Fixed
