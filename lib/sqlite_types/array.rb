@@ -35,7 +35,7 @@ module SQLiteTypes
 
       # Normalize through the same cast path as reads so persisted values and equality queries
       # use one canonical JSON representation for the declared subtype.
-      array = deserialize(value)
+      array = serialize_array(value)
       array = serialize_datetime_array(array) if @subtype == :datetime
       super(array)
     end
@@ -64,6 +64,52 @@ module SQLiteTypes
 
       description = nested ? "nested array" : "array"
       raise ArgumentError, "Invalid #{description} value: #{value.inspect}"
+    end
+
+    def serialize_array(value)
+      array = parse_array(value)
+
+      if @nested
+        array.map do |nested_array|
+          parse_array(nested_array, nested: true).map { |element| serialize_element(element) }
+        end
+      else
+        array.map { |element| serialize_element(element) }
+      end
+    end
+
+    def serialize_element(elem)
+      case @subtype
+      when :integer
+        return cast_integer_element(elem) if integer_string?(elem)
+
+        assert_json_compatible!(elem)
+        elem
+      when :string, :text
+        return elem.to_s if elem.instance_of?(::Symbol)
+
+        assert_json_compatible!(elem)
+        elem
+      when :hash
+        return elem if json_compatible?(elem)
+        return json_round_trip(elem) if elem.is_a?(::Hash)
+
+        serialized = json_round_trip(elem)
+        raise ArgumentError, "Invalid #{@subtype} array element: #{elem.inspect}" unless serialized.is_a?(::Hash) && serialized.any?
+
+        serialized
+      when :json, :jsonb
+        assert_json_compatible!(elem)
+        elem
+      when :datetime
+        unless elem.nil? || elem.is_a?(::String) || datetime_like?(elem)
+          raise ArgumentError, "Invalid #{@subtype} array element: #{elem.inspect}"
+        end
+
+        cast_datetime_element(elem)
+      else
+        raise ArgumentError, "Unsupported subtype: #{@subtype}"
+      end
     end
 
     def cast_element(elem)
@@ -149,6 +195,18 @@ module SQLiteTypes
           (key.is_a?(::String) || key.instance_of?(::Symbol)) && json_compatible?(element)
         end
       end
+    end
+
+    def assert_json_compatible!(value)
+      return if json_compatible?(value)
+
+      raise ArgumentError, "Invalid #{@subtype} array element: #{value.inspect}"
+    end
+
+    def json_round_trip(value)
+      ::ActiveSupport::JSON.decode(::ActiveSupport::JSON.encode(value))
+    rescue JSON::ParserError, TypeError, EncodingError
+      raise ArgumentError, "Invalid #{@subtype} array element: #{value.inspect}"
     end
   end
 end
