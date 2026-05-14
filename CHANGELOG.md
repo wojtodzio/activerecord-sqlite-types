@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-14
+
 ### Added
 
 - Add Rails migration generator for PostgreSQL-to-SQLite type preparation migrations
