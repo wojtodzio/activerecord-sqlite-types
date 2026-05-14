@@ -16,6 +16,10 @@ module SQLiteTypes
       end
     end
 
+    def serialize_cast_value(value)
+      serialize(value)
+    end
+
     def changed?(old_value, new_value, _new_value_before_type_cast)
       !serialize_for_change(old_value).eql?(serialize_for_change(new_value))
     end

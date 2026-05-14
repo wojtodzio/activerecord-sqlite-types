@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-14
+
+### Fixed
+
+- Normalize `IpAddress` string serialization to match `IPAddr` serialization for Active Record lookup helpers
+
 ## [0.3.0] - 2026-05-14
 
 ### Added
