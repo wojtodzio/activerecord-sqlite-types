@@ -115,7 +115,35 @@ end
 
 **Querying arrays:**
 
-For array querying functionality, see [Stephen Margheim's article on enhancing Rails SQLite array columns](https://fractaledmind.github.io/2023/09/12/enhancing-rails-sqlite-array-columns/).
+Include `SQLiteTypes::ArrayColumns` in models where you want tag-style querying helpers for JSON-backed array columns:
+
+```ruby
+class Event < ApplicationRecord
+  include SQLiteTypes::ArrayColumns
+
+  attribute :relationship_statuses, SQLiteTypes::Array.new(:string)
+  array_columns :relationship_statuses
+end
+```
+
+Declaring an array column adds sanitization before validation, class aggregate methods, scopes, and instance predicates:
+
+```ruby
+Event.unique_relationship_statuses
+Event.relationship_statuses_cloud
+Event.with_relationship_statuses
+Event.without_relationship_statuses
+Event.with_any_relationship_statuses("single", "partnered")
+Event.with_all_relationship_statuses("single", "partnered")
+Event.without_any_relationship_statuses("single")
+Event.without_all_relationship_statuses("single", "partnered")
+
+event.has_any_relationship_statuses?("single", "partnered")
+event.has_all_relationship_statuses?("single", "partnered")
+event.has_relationship_status?("single")
+```
+
+Values are compacted, stringified, deduplicated, and sorted before validation and query comparison. The scopes use SQLite's `JSON_EACH` function and are based on [Stephen Margheim's article on enhancing Rails SQLite array columns](https://fractaledmind.com/2023/09/12/enhancing-rails-sqlite-array-columns/).
 
 ### Interval
 
