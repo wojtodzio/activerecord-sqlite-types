@@ -211,6 +211,28 @@ class TestSqliteTypes < Minitest::Test
     assert_equal [[1, true], [{"source" => "nested"}]], reloaded.nested_tags
   end
 
+  def test_array_types_serialize_rails_assignment_values_before_validation
+    metadata_item = Struct.new(:uid, :name, keyword_init: true).new(uid: "abc", name: "Variable")
+
+    record = SqliteTypeRecord.create!(
+      name: "Assignment values",
+      string_tags: [:single, "married"],
+      score_ids: [],
+      metadata_items: [metadata_item],
+      meeting_times: [],
+      nested_tags: [[:first, :second]]
+    )
+
+    reloaded = SqliteTypeRecord.find(record.id)
+    raw = raw_row("type_records", record.id)
+
+    assert_equal ["single", "married"], reloaded.string_tags
+    assert_equal [{"uid" => "abc", "name" => "Variable"}], reloaded.metadata_items
+    assert_equal [["first", "second"]], reloaded.nested_tags
+    assert_equal "[\"single\",\"married\"]", raw.fetch("string_tags")
+    assert_equal "[{\"uid\":\"abc\",\"name\":\"Variable\"}]", raw.fetch("metadata_items")
+  end
+
   def test_ip_address_matches_rails_postgresql_inet_casting
     type = SQLiteTypes::IpAddress.new
     record = SqliteTypeRecord.create!(
@@ -362,11 +384,19 @@ class TestSqliteTypes < Minitest::Test
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:string).serialize([Object.new]) }
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:string).serialize([Time.zone.parse("2025-01-09 12:30:00")]) }
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:hash).serialize([Object.new]) }
+    non_hash_json_object = Object.new
+    non_hash_json_object.define_singleton_method(:as_json) { |_| [] }
+    assert_raises(ArgumentError) { SQLiteTypes::Array.new(:hash).serialize([non_hash_json_object]) }
+    invalid_json_object = Object.new
+    invalid_json_object.define_singleton_method(:as_json) { |*| raise TypeError, "invalid json" }
+    assert_raises(ArgumentError) { SQLiteTypes::Array.new(:hash).serialize([invalid_json_object]) }
     assert_raises(ArgumentError) { SQLiteTypes::Array.new(:datetime).serialize([Object.new]) }
 
     unsupported_type = SQLiteTypes::Array.new(:string)
     unsupported_type.instance_variable_set(:@subtype, :unsupported)
     error = assert_raises(ArgumentError) { unsupported_type.serialize(["value"]) }
+    assert_includes error.message, "Unsupported subtype: unsupported"
+    error = assert_raises(ArgumentError) { unsupported_type.deserialize(["value"]) }
     assert_includes error.message, "Unsupported subtype: unsupported"
   end
 
@@ -380,6 +410,9 @@ class TestSqliteTypes < Minitest::Test
     assert_nil SQLiteTypes::Array.new(:string).serialize(nil)
     assert_equal [-2_147_483_649, 2_147_483_648],
       SQLiteTypes::Array.new(:integer).deserialize("[-2147483649,2147483648]")
+    assert_nil SQLiteTypes::Array.new(:integer).deserialize(nil)
+    assert_raises(ArgumentError) { SQLiteTypes::Array.new(:integer).deserialize([Object.new]) }
+    assert_equal [{"1" => "bad key"}], ActiveSupport::JSON.decode(SQLiteTypes::Array.new(:hash).serialize([{1 => "bad key"}]))
     integer_string = Class.new(String) do
       def to_i
         99
